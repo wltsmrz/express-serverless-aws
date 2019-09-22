@@ -1,0 +1,15 @@
+{
+  "name": "express-serverless-aws",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "config": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 0"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "compressible": "^2.0.17"
+  }
+}
