@@ -3,24 +3,31 @@
 
 `express-serverless-aws` (this) is an attempt to bind API Gateway and Express in a minimally invasive manner, such that full Express API can be used without overhead of proxy server.
 
-Logical steps:
-
-+ `invoke(app, event, context): Promise<Object>` creates a Node HTTP request/response with a dummy socket that buffers writes
-+ Node `IncomingMessage` instance is created from API Gateway request
-+ Express router is invoked
-+ `finish` event emitted
-+ Node response is formatted for API Gateway
-
-Things it supports
+Supports
 
 + `multiValueHeaders` for requests and responses
 + `multiValueQueryStringParameters`
-+ Automatic base64-encoding via negating [compressible](https://github.com/jshttp/compressible)
+
+# API
+
+## `invoke(app, event, context, options): Promise<Object>`
+
+**Arguments**
+
++ `app` *Object* express application
++ `event` *Object* API Gateway event
++ `context` *Object* API Gateway context
++ `options` *Object* (optional) options
++ `options.binaryMimeTypes` *Array* list of mime types to automatically base64-encode
+
+
+**Returns**
+
++ *Promise<Object>* API Gateway response object
 
 TODO
 
 + Should probably do something with `event.pathParameters`
-+ Should probably find an unintrusive way to customize auto-base-64
 
 
 

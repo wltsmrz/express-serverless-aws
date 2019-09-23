@@ -2,7 +2,28 @@ const http = require('http')
 const url = require('url')
 const stream = require('stream')
 const compressible = require('compressible')
-const kResponseBodySink = Symbol()
+const kResponseBodySink = Symbol('kResponseBodySink')
+
+const defaultBinaryMimeTypes = [
+  'application/octet-stream',
+  'application/x-bzip',
+  'application/x-bzip2',
+  'application/gzip',
+  'application/zip',
+  'application/x-7z-compressed',
+  'application/x-tar',
+  'application/pdf',
+  'image/bmp',
+  'image/gif',
+  'image/jpeg',
+  'image/png',
+  'image/tiff',
+  'image/webp',
+  'font/otf',
+  'font/ttf',
+  'font/woff',
+  'font/woff2',
+]
 
 function keysToLowerCase(obj) {
   const ret = {}
@@ -11,9 +32,12 @@ function keysToLowerCase(obj) {
   return ret
 }
 
-function shouldEncodeResponseBody(response) {
+function shouldEncodeResponseBody(response, options) {
   const contentType = response.headers['content-type']
-  return contentType && !compressible(contentType.split(';')[0])
+  if (Array.isArray(options.binaryMimeTypes)) {
+    return options.binaryMimeTypes.includes(contentType)
+  }
+  return defaultBinaryMimeTypes.includes(contentType)
 }
 
 function mapApiGatewayErrorResponse(error) {
@@ -35,14 +59,16 @@ function mapApiGatewayResponseHeaders(headers) {
   return ret
 }
 
-function mapApiGatewayResponse(response, responseBody) {
+
+function mapApiGatewayResponse(response, options) {
   const result = {
     statusCode: response.statusCode
   }
+  const responseBody = response.socket[kResponseBodySink]
   Object.assign(result, mapApiGatewayResponseHeaders(response.getHeaders()))
   const body = Buffer.concat(responseBody).slice(response._header.length)
   return Object.assign(result, 
-    shouldEncodeResponseBody(result)
+    shouldEncodeResponseBody(result, options)
     ? { isBase64Encoded: true, body: body.toString('base64') }
     : { body: body.toString() }
   )
@@ -50,9 +76,6 @@ function mapApiGatewayResponse(response, responseBody) {
 
 function mapApiGatewayRequestHeaders(event) {
   const headers = Object.assign({}, event.multiValueHeaders, event.headers)
-  if (event.body && !headers['content-length']) {
-    headers['content-length'] = Buffer.byteLength(event.body).toString()
-  }
   return keysToLowerCase(headers)
 }
 
@@ -69,14 +92,16 @@ function mapApiGatewayRequest(event) {
   }
 }
 
-function makeRequest(socket, apiGatewayEvent, apiGatewayContext) {
+function makeRequest(socket, event, context) {
   const request = new http.IncomingMessage(socket)
-  Object.assign(request, mapApiGatewayRequest(apiGatewayEvent))
-  Object.assign(request, { apigateway: { event: apiGatewayEvent, context: apiGatewayContext } })
-  if (apiGatewayEvent.body) {
-    request.push(apiGatewayEvent.body)
-    request.push(null)
+  Object.assign(request, mapApiGatewayRequest(event))
+  Object.assign(request, { apigateway: { event: event, context: context } })
+  if (event.body) {
+    const body = event.isBase64Encoded ?  Buffer.from(event.body, 'base64') : event.body
+    request.headers['content-length'] = Buffer.byteLength(body)
+    request.push(body)
   }
+  request.push(null)
   return request
 }
 
@@ -93,28 +118,35 @@ function makeSocket() {
   return socket
 }
 
-function invoke(handler, apigEvent, apigContext) {
+function invoke_(handler, event, context = {}, options = {}) {
   const socket = makeSocket()
-  const request = makeRequest(socket, apigEvent, apigContext)
+  const request = makeRequest(socket, event, context)
   const response = makeResponse(socket, request)
 
   return new Promise((resolve, reject) => {
-    function errorHandler(err, req, res, next) {
-      if (err) {
-        return resolve(mapApiGatewayErrorResponse(err))
-      }
-      resolve({ statusCode: 404, message: 'Not found' })
-    }
+    socket.on('drain', () => response.emit('drain'))
 
-    request.on('error', (err) =>
-      resolve(mapApiGatewayErrorResponse(err)))
-    response.on('error', (err) =>
-      resolve(mapApiGatewayErrorResponse(err)))
+    request.on('error', (error) =>
+      resolve(mapApiGatewayErrorResponse(error)))
+    response.on('error', (error) =>
+      resolve(mapApiGatewayErrorResponse(error)))
     response.on('finish', () =>
-      resolve(mapApiGatewayResponse(response, socket[kResponseBodySink])))
+      resolve(mapApiGatewayResponse(response, options)))
 
-    handler(request, response, errorHandler)
+    if (handler.handle) {
+      handler.handle(request, response)
+    } else {
+      handler(request, response)
+    }
   })
+}
+
+async function invoke(handler, event, context, options) {
+  try {
+    return await invoke_(handler, event, context, options)
+  } catch (exception) {
+    return mapApiGatewayErrorResponse(exception)
+  }
 }
 
 if (process.env.NODE_ENV === 'test') {
