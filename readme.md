@@ -1,13 +1,28 @@
+# express-serverless-aws
 
 `express-serverless-aws` (this) is an attempt to bind API Gateway and Express in a minimally invasive manner, such that full Express API can be used without overhead of proxy server.
 
-[Prevailing solution](https://github.com/awslabs/aws-serverless-express) creates proxy server listening on unix socket so that implementors can leverage Express API. It creates request against server on lambda invoke, packing API Gateway event & context into headers and reconstituting server-side via middleware.
+## Options for running Express-style app on API Gateway+Lambda
 
-Supports
+There are a few ways to integrate API Gateway and Express.
 
-+ `multiValueHeaders` for requests and responses
-+ `multiValueQueryStringParameters`
+### A. The Proxy
 
+On lambda invoke, create proxy server listening on unix socket (if one isn't already listening). Pack request context into request header, and unpack on the receiving proxy server. This adds some overhead to the incoming request. Also, recent releases of Node have quite a smaller request header limit than API Gateway, which means a client could overwhelm the server unintionally and errors would be ambiguous.
+
+This is the solution employed by official [aws-serverless-express](https://github.com/awslabs/aws-serverless-express)
+
+### B. The Express Mock
+
+This technique eschews proxy servers, and instead mocks the Express API. One advantage of this is that dependency on express can be eliminated. Often the Express API is not fully/correctly implemented--this method should raise hairs.
+
+### C. The Node.js HTTP mock
+
+Rather than mocking Express API, a mock of Node's HTTP request. This is relatively commong, e.g. with [Restify's](https://github.com/dinesh-rawat/lambda-restify) API Gateway+Lambda.
+
+### D. L'instance De Classe
+
+No mocking of behavior. Create instance of HTTP.IncomingMessage and HTTP.ServerResponse. Create a dummy Socket that caches streamed data. Pass request and response to Express so it don't know no better. This is the attempt made here (express-serverless-aws).
 
 ## Example
 
@@ -57,5 +72,8 @@ module.exports = function(event, context) {
 
 + `APIGatewayResponse:Promise<Object>` API Gateway response object
 
+**Supports**
 
++ `multiValueHeaders` for requests and responses
++ `multiValueQueryStringParameters`
 

@@ -1,7 +1,6 @@
 const http = require('http')
 const url = require('url')
 const stream = require('stream')
-const compressible = require('compressible')
 const kResponseBodySink = Symbol('kResponseBodySink')
 
 const defaultBinaryMimeTypes = [
